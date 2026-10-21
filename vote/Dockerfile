@@ -1,5 +1,5 @@
 # base defines a base stage that uses the official python runtime base image
-FROM python:3.11-slim AS base
+FROM python@sha256:cce12316475d7d56d605f76e1d811d0dc4e7227f2d4afd29951521264f504ff8 AS base
 
 # Add curl for healthcheck
 RUN apt-get update && \
@@ -22,11 +22,17 @@ CMD ["python", "app.py"]
 # final defines the stage that will bundle the application for production
 FROM base AS final
 
+# Run the production application as a non-root user
+RUN useradd --create-home --uid 10001 appuser
+
 # Copy our code from the current folder to the working directory inside the container
 COPY . .
 
-# Make port 80 available for links and/or publish
-EXPOSE 80
+RUN chown -R appuser:appuser /usr/local/app
+USER appuser
+
+# Make port 8080 available for links and/or publish
+EXPOSE 8080
 
 # Define our command to be run when launching the container
-CMD ["gunicorn", "app:app", "-b", "0.0.0.0:80", "--log-file", "-", "--access-logfile", "-", "--workers", "4", "--keep-alive", "0"]
+CMD ["gunicorn", "app:app", "-b", "0.0.0.0:8080", "--log-file", "-", "--access-logfile", "-", "--workers", "4", "--keep-alive", "0"]

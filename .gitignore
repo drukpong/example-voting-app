@@ -4,3 +4,8 @@ bin/
 obj/
 .vs/
 node_modules/
+
+# Local environment secrets
+.env
+.env.*
+!.env.example

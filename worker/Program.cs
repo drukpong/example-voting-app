@@ -1,7 +1,8 @@
 using System;
+using System.Data;
 using System.Data.Common;
-using System.Linq;
 using System.Net;
+using System.Linq;
 using System.Net.Sockets;
 using System.Threading;
 using Newtonsoft.Json;
@@ -16,52 +17,82 @@ namespace Worker
         {
             try
             {
-                var pgsql = OpenDbConnection("Server=db;Username=postgres;Password=postgres;");
+                var username = Environment.GetEnvironmentVariable("POSTGRES_USER");
+                var password = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD");
+
+                if (string.IsNullOrWhiteSpace(username) ||
+                    string.IsNullOrWhiteSpace(password))
+                {
+                    Console.Error.WriteLine("POSTGRES_USER and POSTGRES_PASSWORD must be set.");
+                    return 1;
+                }
+
+                var connectionString = new NpgsqlConnectionStringBuilder
+                {
+                    Host = "db",
+                    Username = username,
+                    Password = password
+                }.ConnectionString;
+
+                var pgsql = OpenDbConnection(connectionString);
                 var redisConn = OpenRedisConnection("redis");
                 var redis = redisConn.GetDatabase();
-
-                // Keep alive is not implemented in Npgsql yet. This workaround was recommended:
-                // https://github.com/npgsql/npgsql/issues/1214#issuecomment-235828359
                 var keepAliveCommand = pgsql.CreateCommand();
                 keepAliveCommand.CommandText = "SELECT 1";
 
                 var definition = new { vote = "", voter_id = "" };
+
                 while (true)
                 {
-                    // Slow down to prevent CPU spike, only query each 100ms
                     Thread.Sleep(100);
 
-                    // Reconnect redis if down
-                    if (redisConn == null || !redisConn.IsConnected) {
+                    if (!redisConn.IsConnected)
+                    {
                         Console.WriteLine("Reconnecting Redis");
                         redisConn = OpenRedisConnection("redis");
                         redis = redisConn.GetDatabase();
                     }
+
                     string json = redis.ListLeftPopAsync("votes").Result;
+
                     if (json != null)
                     {
                         var vote = JsonConvert.DeserializeAnonymousType(json, definition);
-                        Console.WriteLine($"Processing vote for '{vote.vote}' by '{vote.voter_id}'");
-                        // Reconnect DB if down
-                        if (!pgsql.State.Equals(System.Data.ConnectionState.Open))
+                        if (vote == null)
                         {
-                            Console.WriteLine("Reconnecting DB");
-                            pgsql = OpenDbConnection("Server=db;Username=postgres;Password=postgres;");
+                            Console.Error.WriteLine("Could not parse vote.");
+                            continue;
                         }
-                        else
-                        { // Normal +1 vote requested
-                            UpdateVote(pgsql, vote.voter_id, vote.vote);
+
+                        Console.WriteLine($"Processing vote for '{vote.vote}' by '{vote.voter_id}'");
+
+                        if (pgsql.State != ConnectionState.Open)
+                        {
+                            pgsql = OpenDbConnection(connectionString);
+                            keepAliveCommand = pgsql.CreateCommand();
+                            keepAliveCommand.CommandText = "SELECT 1";
                         }
+
+                        UpdateVote(pgsql, vote.voter_id, vote.vote);
                     }
                     else
                     {
-                        keepAliveCommand.ExecuteNonQuery();
+                        if (pgsql.State == ConnectionState.Open)
+                        {
+                            keepAliveCommand.ExecuteNonQuery();
+                        }
+                        else
+                        {
+                            pgsql = OpenDbConnection(connectionString);
+                            keepAliveCommand = pgsql.CreateCommand();
+                            keepAliveCommand.CommandText = "SELECT 1";
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex.ToString());
+                Console.Error.WriteLine(ex);
                 return 1;
             }
         }

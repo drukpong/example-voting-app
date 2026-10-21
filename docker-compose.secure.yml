@@ -1,0 +1,79 @@
+services:
+  vote:
+    build:
+      context: ./vote
+      target: final
+    image: example-voting-app-vote:secure
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8082:8080"
+    networks:
+      - front-tier
+      - back-tier
+
+  result:
+    build:
+      context: ./result
+    image: example-voting-app-result:secure
+    environment:
+      PORT: "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8083:8080"
+    networks:
+      - front-tier
+      - back-tier
+
+  worker:
+    build:
+      context: ./worker
+    image: example-voting-app-worker:secure
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - back-tier
+
+  redis:
+    image: redis@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+    volumes:
+      - "./healthchecks:/healthchecks:ro"
+    healthcheck:
+      test: ["CMD", "/healthchecks/redis.sh"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - back-tier
+
+  db:
+    image: postgres@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - "db-data:/var/lib/postgresql/data"
+      - "./healthchecks:/healthchecks:ro"
+    healthcheck:
+      test: ["CMD", "/healthchecks/postgres.sh"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - back-tier
+
+volumes:
+  db-data:
+
+networks:
+  front-tier:
+  back-tier:
