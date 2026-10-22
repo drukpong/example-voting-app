@@ -9,3 +9,14 @@ node_modules/
 .env
 .env.*
 !.env.example
+
+# Terraform local files and state
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example

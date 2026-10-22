@@ -1,82 +1,64 @@
-name: Build Vote
-# template source: https://github.com/dockersamples/.github/blob/main/templates/call-docker-build.yaml
+name: Vote CI and Security
 
 on:
-  # we want pull requests so we can build(test) but not push to image registry
   push:
-    branches:
-      - 'main'
-    # only build when important files change
+    branches: [main]
     paths:
       - 'vote/**'
       - '.github/workflows/call-docker-build-vote.yaml'
   pull_request:
-    branches:
-      - 'main'
-    # only build when important files change
+    branches: [main]
     paths:
       - 'vote/**'
       - '.github/workflows/call-docker-build-vote.yaml'
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
-  call-docker-build:
+  build-scan-publish:
+    name: Build, Scan and Publish Vote
+    runs-on: ubuntu-latest
 
-    name: Vote Call Docker Build
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-    uses: dockersamples/.github/.github/workflows/reusable-docker-build.yaml@main
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    permissions:
-      contents: read
-      packages: write # needed to push docker image to ghcr.io
-      pull-requests: write # needed to create and update comments in PRs
-    
-    secrets:
+      - name: Build vote image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./vote
+          target: final
+          load: true
+          tags: example-voting-app-vote:${{ github.sha }}
 
-      # Only needed if with:dockerhub-enable is true below
-      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: example-voting-app-vote:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL
 
-      # Only needed if with:dockerhub-enable is true below
-      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    with:
-      
-      ### REQUIRED
-      ### ENABLE ONE OR BOTH REGISTRIES
-      ### tell docker where to push.
-      ### NOTE if Docker Hub is set to true, you must set secrets above and also add account/repo/tags below
-      dockerhub-enable: true
-      ghcr-enable: true
-
-      ### REQUIRED 
-      ### A list of the account/repo names for docker build. List should match what's enabled above
-      ### defaults to:
-      image-names: |
-        ghcr.io/dockersamples/example-voting-app-vote
-        dockersamples/examplevotingapp_vote
-      
-      ### REQUIRED set rules for tagging images, based on special action syntax:
-      ### https://github.com/docker/metadata-action#tags-input
-      ### defaults to:
-      tag-rules: |
-        type=raw,value=latest,enable=${{ endsWith(github.ref, github.event.repository.default_branch) }}
-        type=raw,value=before,enable=${{ endsWith(github.ref, github.event.repository.default_branch) }}
-        type=raw,value=after,enable=${{ endsWith(github.ref, github.event.repository.default_branch) }}
-        type=ref,event=pr
-      
-      ### path to where docker should copy files into image
-      ### defaults to root of repository (.)
-      context: vote
-      
-      ### Dockerfile alternate name. Default is Dockerfile (relative to context path)
-      # file: Containerfile
-
-      ### build stage to target, defaults to empty, which builds to last stage in Dockerfile
-      # target:
-      
-      ### platforms to build for, defaults to linux/amd64
-      ### other options: linux/amd64,linux/arm64,linux/arm/v7
-      platforms: linux/amd64,linux/arm64,linux/arm/v7
-      
-      ### Create a PR comment with image tags and labels
-      ### defaults to false
-      # comment-enable: false
+      - name: Tag and publish image
+        if: github.event_name == 'push'
+        env:
+          IMAGE: ghcr.io/drukpong/example-voting-app-vote
+          TAG: ${{ github.sha }}
+        run: |
+          docker tag "example-voting-app-vote:$TAG" "$IMAGE:$TAG"
+          docker push "$IMAGE:$TAG"
