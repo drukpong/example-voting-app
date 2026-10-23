@@ -63,3 +63,49 @@ The voting application only accepts one vote per client browser. It does not reg
 This isn't an example of a properly architected perfectly designed distributed app... it's just a simple
 example of the various types of pieces and languages you might see (queues, persistent data, etc), and how to
 deal with them in Docker at a basic level.
+
+---
+
+## DevOps Capstone Project 1
+
+This project extends the Example Voting App with container hardening, automated image builds, Terraform-managed AWS EKS infrastructure, Kubernetes deployment, and Helm release management.
+
+### Infrastructure and deployment
+
+- Terraform configuration: `terraform/eks/`
+- Kubernetes manifests: `k8s-specifications/`
+- Helm chart: `helm/voting-app/`
+- CI workflows: `.github/workflows/`
+- Container images: GitHub Container Registry (GHCR)
+
+### Kubernetes verification
+
+The production application was verified in the `default` namespace. The vote and result services returned HTTP 200 OK through their NodePort endpoints (31000 and 31001).
+
+
+```bash
+kubectl get nodes
+kubectl get pods
+kubectl get services
+kubectl get endpoints vote result
+```
+
+### Helm verification
+
+The chart passed `helm lint` and rendered successfully. The `voting-test` release was installed in the separate `voting-helm-test` namespace.
+
+A test upgrade timed out because both worker nodes had reached their pod capacity. Helm rollback to revision 1 succeeded, creating release revision 3. The five test application pods were subsequently running.
+
+
+```bash
+helm lint helm/voting-app
+helm status voting-test -n voting-helm-test
+helm history voting-test -n voting-helm-test
+```
+
+### Operational safety
+
+- Never commit AWS credentials, Kubernetes Secret values, Terraform state, or sensitive variable files.
+- Review Terraform plans before applying or destroying infrastructure.
+- Check persistent volume claims before deleting database resources.
+- AWS EKS and related resources can incur charges while running; review costs before leaving infrastructure provisioned.
