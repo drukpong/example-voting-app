@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: vote
+  name: vote
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vote
+  template:
+    metadata:
+      annotations:
+      labels:
+        app: vote
+    spec:
+      containers:
+      - image: ghcr.io/drukpong/example-voting-app-vote:da115778468547169891615d26759278a977e922
+        name: vote
+        ports:
+        - containerPort: 8080
+          name: vote
