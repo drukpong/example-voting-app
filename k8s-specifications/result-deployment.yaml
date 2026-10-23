@@ -15,8 +15,8 @@ spec:
         app: result
     spec:
       containers:
-      - image: dockersamples/examplevotingapp_result
+      - image: ghcr.io/drukpong/example-voting-app-result:ae02176318858bc8398429f7d12abd2c394718dc
         name: result
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: result
